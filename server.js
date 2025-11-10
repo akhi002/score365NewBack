@@ -14,9 +14,9 @@ const INTERVAL = 10 * 1000; // 10 sec
     // await matchSync();
 
     setInterval(async () => {
-      console.log("Running scheduled matchSync..." );
+      console.log("Running scheduled matchSync..." );   
       await matchSync();
-      await syncEventData();
+      await syncEventData();   
       await processMatchesFromRedis();
       await getResultScrapper();
     
