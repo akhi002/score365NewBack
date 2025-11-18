@@ -395,7 +395,7 @@ const updateScoreTypeForNewMatches = async (req, res) => {
 const getAllSettings = async (req, res) => {
   try {
     const { sportId } = req.body;
-    const settings = await Setting.find({ sportId }).lean();
+    const settings = await Setting.find({ }).lean();
 
     if (!settings || settings.length == 0) {
       return res.status(404).json({
@@ -484,8 +484,6 @@ const TV_API = "https://marketsarket.qnsports.live/virtualgames";
 // Fetch and cache TV data in Redis
 const tvUrlSync = async () => {
   try {
-    console.log("🎥 Fetching TV data from virtualgames API...");
-
     const { data } = await axios.get(TV_API);
 
     if (!data || !Array.isArray(data)) {
@@ -1043,7 +1041,7 @@ const getStream = async (req, res) => {
       });
     }
 
-    // Fetch stream data from Redis    
+    // Fetch stream data from Redis
 
     const streamDataRaw = await redis.get("stream");
     const streamData = streamDataRaw ? JSON.parse(streamDataRaw) : [];
@@ -1072,6 +1070,78 @@ const getStream = async (req, res) => {
   }
 };
 
+const getLmtUrl = async (req, res) => {
+  try {
+    const { sourceType, sportId, gameId } = req.body;
+
+    switch (sourceType) {
+      case "Ckex":
+        return res.send({
+          url: `https://live.ckex.xyz/lmt/preview.html?matchId=${sportId}`,
+        });
+
+      case "Leon Bet": {
+        const baseUrl =
+          "https://ru.leonspwidget.com/iframe-widgets/dark/sportradarLiveMatchTracker";
+
+        const family =
+          gameId == 4 ? "Cricket" : gameId == 1 ? "Soccer" : "Tennis";
+
+        return res.send({
+          url: `${baseUrl}?matchId=${sportId}&type=match.lmtPlus&lang=en&family=${family}`,
+        });
+      }
+
+      case "SS8":
+        return res.send({
+          url: `https://lmt.ss8055.com/index?Id=${sportId}&t=d`,
+        });
+
+      case "Fasthik":
+        return res.send({
+          url: `https://fasthit.uk/skyclnt/scoreboard-widget/?id=${sportId}&t=b`,
+        });
+
+      default:
+        return res.send({ url: "" });
+    }
+  } catch (error) {
+    console.log("LMT URL Error:", error);
+    return res.status(500).send({ url: "", error: "Something went wrong" });
+  }
+};
+
+const getMatchListByEventId = async (req, res) => {
+  try {
+    const { eventId } = req.body;
+
+    if (!eventId) {
+      return res.status(400).json({
+        success: false,
+        message: "eventId is required",
+      });
+    }
+
+    const match = await Match.findOne({ eventId }).lean();
+    if (!match) {
+      return res.status(404).json({
+        success: false,
+        message: "Match not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: match,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+};
+
 module.exports = {
   saveMatchesFromAPI,
   getAllActiveMatches,
@@ -1091,4 +1161,6 @@ module.exports = {
   getScoreIdNew,
   getMarketResult,
   getStream,
+  getLmtUrl,
+  getMatchListByEventId,
 };

@@ -2,7 +2,9 @@ require("dotenv").config();
 const { connectMongoDB, connectRedis } = require("./config/db");
 const { matchSync, processMatchesFromRedis ,syncEventData, getResultScrapper} = require("./controllers/match.controller");
 
-const INTERVAL = 10 * 1000; // 10 sec
+// const INTERVAL = 10 * 1000; // 10 sec
+const INTERVAL = 10 * 60 * 1000; // 10 minutes
+
 
 (async () => {
   try {
