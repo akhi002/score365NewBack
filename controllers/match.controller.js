@@ -288,7 +288,15 @@ const updateMatchStatus = async (req, res) => {
 
 const getAllMatches = async (req, res) => {
   try {
-    const matches = await Match.find().lean();
+    const { sportId } = req.body;  
+
+    let filter = { isActive: true };
+
+    if (sportId) {
+      filter.sportId = sportId;
+    }
+
+    const matches = await Match.find(filter).lean();
 
     if (!matches || matches.length == 0) {
       return res.status(404).json({
@@ -303,7 +311,6 @@ const getAllMatches = async (req, res) => {
 
     const totalCount = matches.length;
     const activeCount = matches.filter((m) => m.isActive).length;
-    // const activeCount=await matches
     const inactiveCount = totalCount - activeCount;
 
     res.json({
@@ -314,10 +321,13 @@ const getAllMatches = async (req, res) => {
       inactiveCount,
       data: matches,
     });
+
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "Internal server error" });
   }
 };
+
 
 const updateScoreType = async (req, res) => {
   const { sportId, scoreType } = req.body;

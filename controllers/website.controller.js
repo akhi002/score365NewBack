@@ -33,25 +33,59 @@ const createWebsite = async (req, res) => {
 
 };
 
+// const getAllWebsites = async (req, res) => {
+//     const redis = req.app.locals.redis;
+
+//     try {
+//         const cached = await redis.get('all_websites');
+//         if (cached) {
+//             return res.json({ source: 'Redis', data: JSON.parse(cached) });
+//         }
+
+//         const websites = await Website.find({}).sort({ createdAt: -1 });
+
+//         // Cache in Redis for 1 hour
+//         await redis.setEx('all_websites', 3600, JSON.stringify(websites));
+
+//         res.json({ source: 'MongoDB', data: websites });
+//     } catch (err) {
+//         console.error(err);
+//         res.status(500).json({ error: 'Server error' });
+//     }
+// };
+
+
 const getAllWebsites = async (req, res) => {
-    const redis = req.app.locals.redis;
+  const redis = req.app.locals.redis;
 
-    try {
-        const cached = await redis.get('all_websites');
-        if (cached) {
-            return res.json({ source: 'Redis', data: JSON.parse(cached) });
-        }
+  try {
+    // 1. Try Redis
+    const cached = await redis.get('all_websites');
 
-        const websites = await Website.find({}).sort({ createdAt: -1 });
+    // 2. Always get fresh count from MongoDB
+    const mongoCount = await Website.countDocuments();
 
-        // Cache in Redis for 1 hour
-        await redis.setEx('all_websites', 3600, JSON.stringify(websites));
+    if (cached) {
+      const redisData = JSON.parse(cached);
 
-        res.json({ source: 'MongoDB', data: websites });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Server error' });
+      // 3. Compare Redis count with MongoDB count
+      if (redisData.length === mongoCount) {
+        return res.json({ source: "Redis", data: redisData });
+      }
     }
+
+    // 4. If count mismatch OR no cache → fetch from DB
+    const websites = await Website.find({}).sort({ createdAt: -1 });
+
+    // 5. Update Redis with fresh data
+    await redis.setEx("all_websites", 3600, JSON.stringify(websites));
+
+    res.json({ source: "MongoDB (Refreshed)", data: websites });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
 };
 
 
