@@ -291,7 +291,7 @@ const getAllMatches = async (req, res) => {
     const { sportId } = req.body;
 
     // Always active matches
-    let filter = { isActive: true };
+    let filter = { };
    
 
     // Add sport filter if provided
