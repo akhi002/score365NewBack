@@ -395,7 +395,7 @@ const updateScoreTypeForNewMatches = async (req, res) => {
 const getAllSettings = async (req, res) => {
   try {
     const { sportId } = req.body;
-    const settings = await Setting.find({ sportId }).lean();
+    const settings = await Setting.find({}).lean();
 
     if (!settings || settings.length == 0) {
       return res.status(404).json({
