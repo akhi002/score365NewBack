@@ -288,7 +288,15 @@ const updateMatchStatus = async (req, res) => {
 
 const getAllMatches = async (req, res) => {
   try {
-    const matches = await Match.find().lean();
+    const { sportId } = req.body;  
+
+    let filter = { isActive: true };
+
+    if (sportId) {
+      filter.sportId = sportId;
+    }
+
+    const matches = await Match.find(filter).lean();
 
     if (!matches || matches.length == 0) {
       return res.status(404).json({
@@ -303,7 +311,6 @@ const getAllMatches = async (req, res) => {
 
     const totalCount = matches.length;
     const activeCount = matches.filter((m) => m.isActive).length;
-    // const activeCount=await matches
     const inactiveCount = totalCount - activeCount;
 
     res.json({
@@ -314,10 +321,13 @@ const getAllMatches = async (req, res) => {
       inactiveCount,
       data: matches,
     });
+
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "Internal server error" });
   }
 };
+
 
 const updateScoreType = async (req, res) => {
   const { sportId, scoreType } = req.body;
@@ -395,7 +405,7 @@ const updateScoreTypeForNewMatches = async (req, res) => {
 const getAllSettings = async (req, res) => {
   try {
     const { sportId } = req.body;
-    const settings = await Setting.find({}).lean();
+    const settings = await Setting.find({ }).lean();
 
     if (!settings || settings.length == 0) {
       return res.status(404).json({
@@ -484,8 +494,6 @@ const TV_API = "https://marketsarket.qnsports.live/virtualgames";
 // Fetch and cache TV data in Redis
 const tvUrlSync = async () => {
   try {
-    console.log("🎥 Fetching TV data from virtualgames API...");
-
     const { data } = await axios.get(TV_API);
 
     if (!data || !Array.isArray(data)) {
@@ -592,7 +600,7 @@ const tvUrlSync = async () => {
 //   }
 // };
 
-const getTvUrl = async (eventId) => {
+const getTvUrl = async (eventId,mType = "normal") => {
   try {
     const redisClient = getRedisClient();
     const channel = await redisClient.get(`tv:${eventId}`);
@@ -611,6 +619,82 @@ const EXTERNAL_API = process.env.EXTERNAL_MATCH_API;
 const INTERVAL = 10 * 1000; // 10 seconds
 
 // Optimized function to sync matches
+// const matchSync = async () => {
+//   try {
+//     const { data } = await axios.get(EXTERNAL_API);
+
+//     const matches = data.result || data.matches || [];
+//     if (!matches.length) {
+//       console.log("No matches found in API");
+//       return;
+//     }
+
+//     const existingMatches = await Match.find({}, { eventId: 1 }).lean();
+//     const existingEventIds = new Set(existingMatches.map((m) => m.eventId));
+//     const newEventIds = new Set(matches.map((m) => m.eventId));
+
+//     const tvUrlResults = await Promise.allSettled(
+//       matches.map((m) => getTvUrl(m.eventId))
+//     );
+
+//     // ✅ Prepare filtered matches in one pass
+//     const filteredMatches = matches.map((match, idx) => ({
+//       mType: match.mType || "manual",
+//       eventId: match.eventId,
+//       marketId: match.marketId,
+//       eventName: match.eventName,
+//       competitionName: match.competitionName,
+//       competitionId: match.competitionId,
+//       sportId: match.sportId,
+//       sportName: match.sportName,
+//       openDate: match.openDate,
+//       type: match.type || "auto",
+//       isActive: match.isActive ?? true,
+//       isResult: match.isResult ?? false,
+//       scoreId: match.scoreId || "0",
+//       scoreId2: 0,
+//       scoreType: match.scoreType || "",
+//       tvUrl: tvUrlResults[idx]?.value || "",
+//       matchRunners: match.matchRunners || [],
+//       matchType:
+//         match.sportId == 4 && match.matchRunners?.length == 3 ? "Test" : "All",
+//       match_ka_type: match.match_ka_type || "",
+//       inning_info: match.inning_info || {},
+//       marketIds: match.marketIds || [match.marketId],
+//     }));
+
+//     //  Prepare all bulk operations together (not inside loop)
+//     const bulkOps = filteredMatches.map((match) => ({
+//       updateOne: {
+//         filter: { eventId: match.eventId },
+//         update: { $set: match },
+//         upsert: true,
+//       },
+//     }));
+
+//     // ✅ Single DB bulk write
+//     if (bulkOps.length > 0) {
+//       const res = await Match.bulkWrite(bulkOps);
+//       console.log(
+//         `✅ Upserted: ${res.upsertedCount}, Modified: ${res.modifiedCount}`
+//       );
+//     }
+
+//     // ✅ Delete old matches in one go
+//     const toDelete = [...existingEventIds].filter((id) => !newEventIds.has(id));
+//     if (toDelete.length > 0) {
+//       await Match.deleteMany({ eventId: { $in: toDelete } });
+//       console.log(`🗑️ Deleted ${toDelete.length} old matches`);
+//     }
+
+//     console.log(
+//       `✅ matchSync completed — Total: ${matches.length}, Deleted: ${toDelete.length}`
+//     );
+//   } catch (err) {
+//     console.error("❌ Error syncing matches:", err.message);
+//   }
+// };
+
 const matchSync = async () => {
   try {
     const { data } = await axios.get(EXTERNAL_API);
@@ -626,66 +710,78 @@ const matchSync = async () => {
     const newEventIds = new Set(matches.map((m) => m.eventId));
 
     const tvUrlResults = await Promise.allSettled(
-      matches.map((m) => getTvUrl(m.eventId))
+      matches.map((m) => getTvUrl(m.eventId, m.mType))
     );
 
-    // ✅ Prepare filtered matches in one pass
-    const filteredMatches = matches.map((match, idx) => ({
-      mType: match.mType || "manual",
-      eventId: match.eventId,
-      marketId: match.marketId,
-      eventName: match.eventName,
-      competitionName: match.competitionName,
-      competitionId: match.competitionId,
-      sportId: match.sportId,
-      sportName: match.sportName,
-      openDate: match.openDate,
-      type: match.type || "auto",
-      isActive: match.isActive ?? true,
-      isResult: match.isResult ?? false,
-      scoreId: match.scoreId || "0",
-      scoreId2: 0,
-      scoreType: match.scoreType || "",
-      tvUrl: tvUrlResults[idx]?.value || "",
-      matchRunners: match.matchRunners || [],
-      matchType:
-        match.sportId == 4 && match.matchRunners?.length == 3 ? "Test" : "All",
-      match_ka_type: match.match_ka_type || "",
-      inning_info: match.inning_info || {},
-      marketIds: match.marketIds || [match.marketId],
-    }));
+    const bulkOps = [];
 
-    //  Prepare all bulk operations together (not inside loop)
-    const bulkOps = filteredMatches.map((match) => ({
-      updateOne: {
-        filter: { eventId: match.eventId },
-        update: { $set: match },
-        upsert: true,
-      },
-    }));
+    for (let i = 0; i < matches.length; i++) {
+      const match = matches[i];
 
-    // ✅ Single DB bulk write
+      const partialUpdate = {
+        marketId: match.marketId,
+        marketIds: match.marketIds || [match.marketId],
+        openDate: match.openDate,
+        tvUrl: tvUrlResults[i]?.value || "",
+        updatedAt: new Date(),
+      };
+
+      bulkOps.push({
+        updateOne: {
+          filter: { eventId: match.eventId },
+          update: {
+            $set: partialUpdate,
+            $setOnInsert: {
+              // Only when NEW match
+              mType: match.mType || "manual",
+              eventName: match.eventName,
+              competitionName: match.competitionName,
+              competitionId: match.competitionId,
+              sportId: match.sportId,
+              sportName: match.sportName,
+              type: match.type || "auto",
+              isActive: true,
+              isResult: false,
+              scoreId: match.scoreId || "0",
+              scoreId2: 0,
+              scoreType: match.scoreType || "",
+              matchRunners: match.matchRunners || [],
+              matchType:
+                match.sportId == 4 && match.matchRunners?.length == 3
+                  ? "Test"
+                  : "All",
+              match_ka_type: match.match_ka_type || "",
+              inning_info: match.inning_info || {},
+              createdAt: new Date(),
+            },
+          },
+          upsert: true,
+        },
+      });
+    }
+
+    // ---------- Bulk Write ----------
     if (bulkOps.length > 0) {
-      const res = await Match.bulkWrite(bulkOps);
+      const r = await Match.bulkWrite(bulkOps);
       console.log(
-        `✅ Upserted: ${res.upsertedCount}, Modified: ${res.modifiedCount}`
+        `✅ Upserted: ${r.upsertedCount}, Modified: ${r.modifiedCount}`
       );
     }
 
-    // ✅ Delete old matches in one go
+    // ---------- Delete old matches ----------
     const toDelete = [...existingEventIds].filter((id) => !newEventIds.has(id));
+
     if (toDelete.length > 0) {
       await Match.deleteMany({ eventId: { $in: toDelete } });
-      console.log(`🗑️ Deleted ${toDelete.length} old matches`);
+      console.log(`🗑 Deleted: ${toDelete.length}`);
     }
 
-    console.log(
-      `✅ matchSync completed — Total: ${matches.length}, Deleted: ${toDelete.length}`
-    );
+    console.log("✅ matchSync completed successfully");
   } catch (err) {
-    console.error("❌ Error syncing matches:", err.message);
+    console.error("❌ matchSync error:", err.message);
   }
 };
+
 
 // matchSync();
 // setInterval(matchSync, INTERVAL);
@@ -1043,7 +1139,7 @@ const getStream = async (req, res) => {
       });
     }
 
-    // Fetch stream data from Redis    
+    // Fetch stream data from Redis
 
     const streamDataRaw = await redis.get("stream");
     const streamData = streamDataRaw ? JSON.parse(streamDataRaw) : [];
@@ -1072,6 +1168,78 @@ const getStream = async (req, res) => {
   }
 };
 
+const getLmtUrl = async (req, res) => {
+  try {
+    const { sourceType, sportId, gameId } = req.body;
+
+    switch (sourceType) {
+      case "Ckex":
+        return res.send({
+          url: `https://live.ckex.xyz/lmt/preview.html?matchId=${sportId}`,
+        });
+
+      case "Leon Bet": {
+        const baseUrl =
+          "https://ru.leonspwidget.com/iframe-widgets/dark/sportradarLiveMatchTracker";
+
+        const family =
+          gameId == 4 ? "Cricket" : gameId == 1 ? "Soccer" : "Tennis";
+
+        return res.send({
+          url: `${baseUrl}?matchId=${sportId}&type=match.lmtPlus&lang=en&family=${family}`,
+        });
+      }
+
+      case "SS8":
+        return res.send({
+          url: `https://lmt.ss8055.com/index?Id=${sportId}&t=d`,
+        });
+
+      case "Fasthik":
+        return res.send({
+          url: `https://fasthit.uk/skyclnt/scoreboard-widget/?id=${sportId}&t=b`,
+        });
+
+      default:
+        return res.send({ url: "" });
+    }
+  } catch (error) {
+    console.log("LMT URL Error:", error);
+    return res.status(500).send({ url: "", error: "Something went wrong" });
+  }
+};
+
+const getMatchListByEventId = async (req, res) => {
+  try {
+    const { eventId } = req.body;
+
+    if (!eventId) {
+      return res.status(400).json({
+        success: false,
+        message: "eventId is required",
+      });
+    }
+
+    const match = await Match.findOne({ eventId }).lean();
+    if (!match) {
+      return res.status(404).json({
+        success: false,
+        message: "Match not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: match,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+};
+
 module.exports = {
   saveMatchesFromAPI,
   getAllActiveMatches,
@@ -1091,4 +1259,6 @@ module.exports = {
   getScoreIdNew,
   getMarketResult,
   getStream,
+  getLmtUrl,
+  getMatchListByEventId,
 };
