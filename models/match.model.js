@@ -26,6 +26,8 @@ const matchSchema = new mongoose.Schema(
 
     scoreCardhomeTeam: { type: String, default: null },
     scoreCardawayTeam: { type: String, default: null },
+    isNew: { type: Boolean, default: true }
+
   },
   { timestamps: true }
 );
