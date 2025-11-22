@@ -1,6 +1,6 @@
 const express = require("express");
 const {
-    saveMatchesFromAPI,
+    manuallySyncMatches,
     getAllActiveMatches,
     updateMatchScores,
     updateMatchStatus,
@@ -19,7 +19,8 @@ const {
 
 const router = express.Router();
 
-router.post("/", saveMatchesFromAPI);
+// router.post("/", saveMatchesFromAPI);
+router.post("/syncMatches",manuallySyncMatches)
 router.post("/getMatchesBySport", getAllActiveMatches);
 router.post("/updateMatchScores", updateMatchScores);
 router.post("/changeStatus", updateMatchStatus);

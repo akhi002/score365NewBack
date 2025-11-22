@@ -98,79 +98,79 @@ const updateMarketIdsIfChanged = async (apiMatch, existingMatch) => {
 //   }
 // };
 
-const saveMatchesFromAPI = async (req, res) => {
-  try {
-    const requestBody = req?.body || {};
+// const saveMatchesFromAPI = async (req, res) => {
+//   try {
+//     const requestBody = req?.body || {};
 
-    // 1️⃣ Fetch matches from external API
-    const response = await axios.post(
-      "https://scoreapi.365cric.com/api/match/getAllMatches",
-      requestBody
-    );
+//     // 1️⃣ Fetch matches from external API
+//     const response = await axios.post(
+//       "https://scoreapi.365cric.com/api/match/getAllMatches",
+//       requestBody
+//     );
 
-    const matches = findArray(response.data);
-    if (!Array.isArray(matches)) {
-      return res.status(400).json({ error: "API did not return an array" });
-    }
+//     const matches = findArray(response.data);
+//     if (!Array.isArray(matches)) {
+//       return res.status(400).json({ error: "API did not return an array" });
+//     }
 
-    // 2️⃣ Get all existing matches
-    const existingMatches = await Match.find(
-      {},
-      { eventId: 1, marketIds: 1 }
-    ).lean();
-    const existingMap = new Map();
-    existingMatches.forEach((m) => existingMap.set(m.eventId, m));
+//     // 2️⃣ Get all existing matches
+//     const existingMatches = await Match.find(
+//       {},
+//       { eventId: 1, marketIds: 1 }
+//     ).lean();
+//     const existingMap = new Map();
+//     existingMatches.forEach((m) => existingMap.set(m.eventId, m));
 
-    const bulkOps = [];
-    const apiEventIds = matches.map((m) => m.eventId);
-    let updatedCount = 0;
+//     const bulkOps = [];
+//     const apiEventIds = matches.map((m) => m.eventId);
+//     let updatedCount = 0;
 
-    // 3️⃣ Process all API matches
-    for (const match of matches) {
-      const existing = existingMap.get(match.eventId);
+//     // 3️⃣ Process all API matches
+//     for (const match of matches) {
+//       const existing = existingMap.get(match.eventId);
 
-      if (!existing) {
-        // 🟢 Insert new match
-        bulkOps.push({
-          insertOne: { document: { ...match, isNew: true } },
-        });
-      } else {
-        // 🔵 Check & update marketIds if changed
-        const changed = await updateMarketIdsIfChanged(match, existing);
-        if (changed) updatedCount++;
-      }
-    }
+//       if (!existing) {
+//         // 🟢 Insert new match
+//         bulkOps.push({
+//           insertOne: { document: { ...match, isNew: true } },
+//         });
+//       } else {
+//         // 🔵 Check & update marketIds if changed
+//         const changed = await updateMarketIdsIfChanged(match, existing);
+//         if (changed) updatedCount++;
+//       }
+//     }
 
-    // 4️⃣ Mark all matches as not new
-    await Match.updateMany({ isNew: true }, { $set: { isNew: false } });
+//     // 4️⃣ Mark all matches as not new
+//     await Match.updateMany({ isNew: true }, { $set: { isNew: false } });
 
-    // 5️⃣ Perform inserts
-    if (bulkOps.length > 0) {
-      await Match.bulkWrite(bulkOps);
-    }
+//     // 5️⃣ Perform inserts
+//     if (bulkOps.length > 0) {
+//       await Match.bulkWrite(bulkOps);
+//     }
 
-    // 6️⃣ Delete removed matches
-    await Match.deleteMany({ eventId: { $nin: apiEventIds } });
+//     // 6️⃣ Delete removed matches
+//     await Match.deleteMany({ eventId: { $nin: apiEventIds } });
 
-    // ✅ Response
-    if (res) {
-      return res.json({
-        success: true,
-        message: "Database synced successfully",
-        totalMatches: matches.length,
-        newInserted: bulkOps.length,
-        updatedMarkets: updatedCount,
-      });
-    } else {
-      console.log(
-        `Synced: Total=${matches.length}, Inserted=${bulkOps.length}, UpdatedMarkets=${updatedCount}`
-      );
-    }
-  } catch (error) {
-    if (res)
-      res.status(500).json({ error: "Failed to fetch and save matches" });
-  }
-};
+//     // ✅ Response
+//     if (res) {
+//       return res.json({
+//         success: true,
+//         message: "Database synced successfully",
+//         totalMatches: matches.length,
+//         newInserted: bulkOps.length,
+//         updatedMarkets: updatedCount,
+//       });
+//     } else {
+//       console.log(
+//         `Synced: Total=${matches.length}, Inserted=${bulkOps.length}, UpdatedMarkets=${updatedCount}`
+//       );
+//     }
+//   } catch (error) {
+//     if (res)
+//       res.status(500).json({ error: "Failed to fetch and save matches" });
+//   }
+// };
 
 const getAllActiveMatches = async (req, res) => {
   try {
@@ -202,7 +202,7 @@ const getAllActiveMatches = async (req, res) => {
 
 const updateMatchScores = async (req, res) => {
   try {
-    const { id, scoreId2, scoreType } = req.body;
+    const { id, scoreId, scoreType } = req.body;
 
     if (!id) {
       return res.status(400).json({
@@ -212,7 +212,7 @@ const updateMatchScores = async (req, res) => {
     }
 
     const updateFields = {};
-    if (scoreId2) updateFields.scoreId2 = scoreId2;
+    if (scoreId) updateFields.scoreId = scoreId;
     if (scoreType) updateFields.scoreType = scoreType;
 
     if (Object.keys(updateFields).length == 0) {
@@ -302,7 +302,7 @@ const getAllMatches = async (req, res) => {
     const matches = await Match.find(filter).lean();
     const allMatches=await Match.find(sportId).lean()
 
-    if (!matches || matches.length === 0) {
+    if (!matches || matches.length == 0) {
       return res.status(404).json({
         status: "false",
         message: "No matches found",
@@ -788,11 +788,99 @@ const matchSync = async () => {
   }
 };
 
+const manuallySyncMatches = async (req, res) => {
+  try {
+    const { data } = await axios.get(EXTERNAL_API);
 
-// matchSync();
-// setInterval(matchSync, INTERVAL);
+    const matches = data.result || data.matches || [];
+    if (!matches.length) {
+      return res.json({
+        status: false,
+        message: "No matches found from external API",
+      });
+    }
 
-// API endpoint to get all matches
+    const existingMatches = await Match.find({}, { eventId: 1 }).lean();
+    const existingEventIds = new Set(existingMatches.map((m) => m.eventId));
+    const newEventIds = new Set(matches.map((m) => m.eventId));
+
+    // ------- FETCH TV URLs IN PARALLEL -------
+    const tvUrlResults = await Promise.allSettled(
+      matches.map((m) => getTvUrl(m.eventId, m.mType))
+    );
+
+    const bulkOps = [];
+
+    for (let i = 0; i < matches.length; i++) {
+      const match = matches[i];
+
+      const partialUpdate = {
+        marketId: match.marketId,
+        marketIds: match.marketIds || [match.marketId],
+        openDate: match.openDate,
+        tvUrl: tvUrlResults[i]?.value || "",
+        updatedAt: new Date(),
+      };
+
+      bulkOps.push({
+        updateOne: {
+          filter: { eventId: match.eventId },
+          update: {
+            $set: partialUpdate,
+            $setOnInsert: {
+              mType: match.mType || "manual",
+              eventName: match.eventName,
+              competitionName: match.competitionName,
+              competitionId: match.competitionId,
+              sportId: match.sportId,
+              sportName: match.sportName,
+              type: match.type || "auto",
+              isActive: true,
+              isResult: false,
+              scoreId: match.scoreId || "0",
+              scoreId2: 0,
+              scoreType: match.scoreType || "",
+              matchRunners: match.matchRunners || [],
+              matchType:
+                match.sportId == 4 && match.matchRunners?.length == 3
+                  ? "Test"
+                  : "All",
+              match_ka_type: match.match_ka_type || "",
+              inning_info: match.inning_info || {},
+              createdAt: new Date(),
+            },
+          },
+          upsert: true,
+        },
+      });
+    }
+
+    // ---------- Bulk Write ----------
+    const result = await Match.bulkWrite(bulkOps);
+
+    // ---------- Delete Stale Matches ----------
+    const toDelete = [...existingEventIds].filter((id) => !newEventIds.has(id));
+
+    if (toDelete.length) {
+      await Match.deleteMany({ eventId: { $in: toDelete } });
+    }
+
+    return res.json({
+      status: true,
+      message: "matchSync completed",
+      upserted: result.upsertedCount,
+      modified: result.modifiedCount,
+      deleted: toDelete.length,
+    });
+  } catch (err) {
+    console.error("matchSync error:", err.message);
+    return res.status(500).json({
+      status: false,
+      message: "matchSync failed",
+      error: err.message,
+    });
+  }
+};
 
 (async () => {
   await tvUrlSync();
@@ -1247,7 +1335,7 @@ const getMatchListByEventId = async (req, res) => {
 };
 
 module.exports = {
-  saveMatchesFromAPI,
+  manuallySyncMatches,
   getAllActiveMatches,
   updateMatchScores,
   updateMatchStatus,
