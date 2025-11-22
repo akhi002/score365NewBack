@@ -202,7 +202,7 @@ const getAllActiveMatches = async (req, res) => {
 
 const updateMatchScores = async (req, res) => {
   try {
-    const { id, scoreId2, scoreType } = req.body;
+    const { id, scoreId, scoreType } = req.body;
 
     if (!id) {
       return res.status(400).json({
@@ -212,7 +212,7 @@ const updateMatchScores = async (req, res) => {
     }
 
     const updateFields = {};
-    if (scoreId2) updateFields.scoreId2 = scoreId2;
+    if (scoreId) updateFields.scoreId = scoreId;
     if (scoreType) updateFields.scoreType = scoreType;
 
     if (Object.keys(updateFields).length == 0) {
@@ -302,7 +302,7 @@ const getAllMatches = async (req, res) => {
     const matches = await Match.find(filter).lean();
     const allMatches=await Match.find(sportId).lean()
 
-    if (!matches || matches.length === 0) {
+    if (!matches || matches.length == 0) {
       return res.status(404).json({
         status: "false",
         message: "No matches found",
