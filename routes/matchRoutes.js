@@ -14,7 +14,8 @@ const {
     getMarketResult,
     getStream,
     getLmtUrl,
-    getMatchListByEventId
+    getMatchListByEventId,
+    updateLiveTvUrl
 } = require("../controllers/match.controller");
 
 const router = express.Router();
@@ -35,7 +36,8 @@ router.post("/getMatches", getMatches);
 router.post("/getMarketId/:marketId", getMarketResult);
 router.post("/getStream", getStream);
 router.post("/getscoreurl",getLmtUrl);
-router.post("/matchByEventId",getMatchListByEventId)
+router.post("/matchByEventId",getMatchListByEventId);
+router.post("/setTvUrl",updateLiveTvUrl)
 
 
 module.exports = router;

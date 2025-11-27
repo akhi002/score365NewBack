@@ -292,15 +292,14 @@ const getAllMatches = async (req, res) => {
 
     // Always active matches
     let filter = { isActive: true };
-   
 
     // Add sport filter if provided
     if (sportId) {
       filter.sportId = sportId;
     }
 
-    const matches = await Match.find(filter).lean();
-    const allMatches=await Match.find(sportId).lean()
+    const matches = await Match.find(filter).sort({ openDate: -1 }).lean();
+    const allMatches = await Match.find(sportId).sort({ openDate: -1 }).lean();
 
     if (!matches || matches.length == 0) {
       return res.status(404).json({
@@ -324,16 +323,13 @@ const getAllMatches = async (req, res) => {
       activeCount,
       inactiveCount,
       data: matches,
-      allMatches:allMatches
+      allMatches: allMatches,
     });
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Internal server error" });
   }
 };
-
-
 
 const updateScoreType = async (req, res) => {
   const { sportId, scoreType } = req.body;
@@ -411,7 +407,7 @@ const updateScoreTypeForNewMatches = async (req, res) => {
 const getAllSettings = async (req, res) => {
   try {
     const { sportId } = req.body;
-    const settings = await Setting.find({ }).lean();
+    const settings = await Setting.find({}).lean();
 
     if (!settings || settings.length == 0) {
       return res.status(404).json({
@@ -606,7 +602,7 @@ const tvUrlSync = async () => {
 //   }
 // };
 
-const getTvUrl = async (eventId,mType = "normal") => {
+const getTvUrl = async (eventId, mType = "normal") => {
   try {
     const redisClient = getRedisClient();
     const channel = await redisClient.get(`tv:${eventId}`);
@@ -1334,6 +1330,49 @@ const getMatchListByEventId = async (req, res) => {
   }
 };
 
+const updateLiveTvUrl = async (req, res) => {
+  try {
+    const { eventId, tvUrl } = req.body;
+
+    if (!eventId) {
+      return res.status(400).json({
+        success: false,
+        message: "eventId is required",
+      });
+    }
+    if (!tvUrl) {
+      return res.status(400).json({
+        success: false,
+        message: "tvUrl is required",
+      });
+    }
+
+    const updatedMatch = await Match.findOneAndUpdate(
+      { eventId },
+      { $set: { tvUrl } },
+      { new: true }
+    );
+    if (!updatedMatch) {
+      return res.status(404).json({
+        success: false,
+        message: "Match not found with this eventId",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "TV URL updated successfully",
+      data: updatedMatch,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   manuallySyncMatches,
   getAllActiveMatches,
@@ -1355,4 +1394,5 @@ module.exports = {
   getStream,
   getLmtUrl,
   getMatchListByEventId,
+  updateLiveTvUrl,
 };
