@@ -4,6 +4,7 @@ const { hashPassword, comparePassword } = require("../utils/passwordhasing");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const { client } = require("../index");
+const { encrypt } = require("../utils/encrypt");
 
 const registerUser = async (req, res) => {
   try {
@@ -18,7 +19,9 @@ const registerUser = async (req, res) => {
     } = req.body;
 
     if (!username || !email || !password || !roleName) {
-      return res.status(400).json({ success: false, message: "All fields required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "All fields required" });
     }
 
     const role = await Role.findOne({ name: roleName });
@@ -28,15 +31,18 @@ const registerUser = async (req, res) => {
 
     const existingUser = await User.findOne({ email });
     if (existingUser) {
-      return res.status(400).json({ success: false, message: "User already exists" });
+      return res
+        .status(400)
+        .json({ success: false, message: "User already exists" });
     }
 
     const hashedPassword = await hashPassword(password);
 
-
     // Capture client info
     const ipAddress =
-      req.headers["x-forwarded-for"] || req.connection.remoteAddress || "unknown";
+      req.headers["x-forwarded-for"] ||
+      req.connection.remoteAddress ||
+      "unknown";
     const userAgent = req.headers["user-agent"] || "unknown";
 
     const newUser = new User({
@@ -74,7 +80,6 @@ const registerUser = async (req, res) => {
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
-
 
 // const login = async (req, res) => {
 //   try {
@@ -122,11 +127,9 @@ const registerUser = async (req, res) => {
 const MAX_DEVICES = 2;
 
 exports.generateToken = (user) => {
-  return jwt.sign(
-    { id: user._id, role: user.role },
-    process.env.JWT_SECRET,
-    { expiresIn: "7d" }
-  );
+  return jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET, {
+    expiresIn: "7d",
+  });
 };
 
 const login = async (req, res) => {
@@ -134,17 +137,23 @@ const login = async (req, res) => {
     const { email, password } = req.body;
     const user = await User.findOne({ email }).populate("role");
     if (!user)
-      return res.status(404).json({ success: false, message: "User not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch)
-      return res.status(401).json({ success: false, message: "Invalid password" });
+      return res
+        .status(401)
+        .json({ success: false, message: "Invalid password" });
 
     const token = jwt.sign(
       { id: user._id, role: user.role },
       process.env.JWT_SECRET,
       { expiresIn: "7d" }
     );
+
+    const encryptedUserId = (user._id.toString());
 
     const deviceId = req.headers["x-device-id"] || `device-${Date.now()}`;
     const deviceType = req.headers["x-device-type"] || "unknown";
@@ -154,11 +163,17 @@ const login = async (req, res) => {
 
     const key = `user_sessions:${user._id}`;
     let sessions = await redisClient.lRange(key, 0, -1);
-    sessions = sessions.map(s => {
-      try { return JSON.parse(s); } catch { return null; }
-    }).filter(Boolean);
+    sessions = sessions
+      .map((s) => {
+        try {
+          return JSON.parse(s);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
 
-    const deviceSession = sessions.find(s => s.deviceId === deviceId);
+    const deviceSession = sessions.find((s) => s.deviceId === deviceId);
 
     if (!deviceSession && sessions.length >= MAX_DEVICES) {
       return res.status(403).json({
@@ -177,7 +192,7 @@ const login = async (req, res) => {
       await redisClient.rPush(key, JSON.stringify(newSession));
     } else {
       deviceSession.token = token;
-      const index = sessions.findIndex(s => s.deviceId === deviceId);
+      const index = sessions.findIndex((s) => s.deviceId === deviceId);
       await redisClient.lSet(key, index, JSON.stringify(deviceSession));
     }
 
@@ -192,26 +207,29 @@ const login = async (req, res) => {
       success: true,
       message: "Login successful",
       token,
+      encryptedUserId,
       device: { deviceId, deviceType },
     });
-
   } catch (err) {
     console.error("❌ Login Error:", err);
-    res.status(500).json({ success: false, message: "Server error", error: err.message });
+    res
+      .status(500)
+      .json({ success: false, message: "Server error", error: err.message });
   }
 };
 
-
 const redisClearSessions = async (req, res) => {
   try {
-    const { userId } = req.body; 
+    const { userId } = req.body;
     if (!userId) {
-      return res.status(400).json({ success: false, message: "User ID required " });
+      return res
+        .status(400)
+        .json({ success: false, message: "User ID required " });
     }
 
-    const redisClient = req.app.locals.redis; 
+    const redisClient = req.app.locals.redis;
     const key = `user_sessions:${userId}`;
-    
+
     await redisClient.del(key);
 
     return res.json({
@@ -222,6 +240,5 @@ const redisClearSessions = async (req, res) => {
     return res.status(500).json({ success: false, message: "Server error" });
   }
 };
-
 
 module.exports = { registerUser, login, redisClearSessions };

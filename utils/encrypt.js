@@ -22,6 +22,4 @@ function decrypt(encryptedData, ivHex) {
 const { encryptedData, iv } = encrypt('myemail@example.com');
 const originalText = decrypt(encryptedData, iv);
 
-console.log({ encryptedData, iv, originalText });
-
 module.exports={encrypt,decrypt}

@@ -376,33 +376,39 @@ const updateScoreTypeForNewMatches = async (req, res) => {
   }
 
   try {
-    const settingResult = await Setting.updateOne(
-      { sportId },
+    let sportIdsToUpdate = [];
+
+    //  If user selects ALL → update all sports (1 = cricket, 2 = soccer, 3 = tennis)
+    if (sportId === "all") {
+      sportIdsToUpdate = [1, 2, 3];
+    } else {
+      sportIdsToUpdate = [Number(sportId)];
+    }
+
+    //  Update Setting documents for all sports
+    await Setting.updateMany(
+      { sportId: { $in: sportIdsToUpdate } },
       { $set: { scoreType } },
       { upsert: true }
     );
 
+    //  Update all matches for all sports
     const result = await Match.updateMany(
-      { sportId, isNew: true },
-      { $set: { scoreType, isNew: false } }
+      { sportId: { $in: sportIdsToUpdate } },
+      { $set: { scoreType } }
     );
 
-    if (result.modifiedCount == 0) {
-      return res.json({
-        success: true,
-        message: "No new matches found to update",
-      });
-    }
-
-    res.json({
+    return res.json({
       success: true,
-      message: `ScoreType updated for ${result.modifiedCount} new matches`,
-      updatedCount: result.modifiedCount,
+      message: "ScoreType Updated Successfully",
+      updatedMatches: result.modifiedCount,
     });
+
   } catch (err) {
     res.status(500).json({ success: false, error: "Server error" });
   }
 };
+ 
 
 const getAllSettings = async (req, res) => {
   try {
@@ -697,19 +703,109 @@ const INTERVAL = 10 * 1000; // 10 seconds
 //   }
 // };
 
+// const matchSync = async () => {
+//   try {
+//     const { data } = await axios.get(EXTERNAL_API);
+
+//     const matches = data.result || data.matches || [];
+//     if (!matches.length) {
+//       console.log("No matches found in API");
+//       return;
+//     }
+
+//     const existingMatches = await Match.find({}, { eventId: 1 }).lean();
+//     const existingEventIds = new Set(existingMatches.map((m) => m.eventId));
+//     const newEventIds = new Set(matches.map((m) => m.eventId));
+
+//     const tvUrlResults = await Promise.allSettled(
+//       matches.map((m) => getTvUrl(m.eventId, m.mType))
+//     );
+
+//     const bulkOps = [];
+
+//     for (let i = 0; i < matches.length; i++) {
+//       const match = matches[i];
+
+//       const partialUpdate = {
+//         marketId: match.marketId,
+//         marketIds: match.marketIds || [match.marketId],
+//         openDate: match.openDate,
+//         tvUrl: tvUrlResults[i]?.value || "",
+//         updatedAt: new Date(),
+//       };
+
+//       bulkOps.push({
+//         updateOne: {
+//           filter: { eventId: match.eventId },
+//           update: {
+//             $set: partialUpdate,
+//             $setOnInsert: {
+//               // Only when NEW match
+//               mType: match.mType || "manual",
+//               eventName: match.eventName,
+//               competitionName: match.competitionName,
+//               competitionId: match.competitionId,
+//               sportId: match.sportId,
+//               sportName: match.sportName,
+//               type: match.type || "auto",
+//               isActive: true,
+//               isResult: false,
+//               scoreId: match.scoreId || "0",
+//               scoreId2: 0,
+//               scoreType: match.scoreType || "",
+//               matchRunners: match.matchRunners || [],
+//               matchType:
+//                 match.sportId == 4 && match.matchRunners?.length == 3
+//                   ? "Test"
+//                   : "All",
+//               match_ka_type: match.match_ka_type || "",
+//               inning_info: match.inning_info || {},
+//               createdAt: new Date(),
+//             },
+//           },
+//           upsert: true,
+//         },
+//       });
+//     }
+
+//     // ---------- Bulk Write ----------
+//     if (bulkOps.length > 0) {
+//       const r = await Match.bulkWrite(bulkOps);
+//       console.log(
+//         `✅ Upserted: ${r.upsertedCount}, Modified: ${r.modifiedCount}`
+//       );
+//     }
+
+//     // ---------- Delete old matches ----------
+//     const toDelete = [...existingEventIds].filter((id) => !newEventIds.has(id));
+
+//     if (toDelete.length > 0) {
+//       await Match.deleteMany({ eventId: { $in: toDelete } });
+//       console.log(`🗑 Deleted: ${toDelete.length}`);
+//     }
+
+//     console.log("✅ matchSync completed successfully");
+//   } catch (err) {
+//     console.error("❌ matchSync error:", err.message);
+//   }
+// };
+
 const matchSync = async () => {
   try {
     const { data } = await axios.get(EXTERNAL_API);
 
     const matches = data.result || data.matches || [];
-    if (!matches.length) {
-      console.log("No matches found in API");
-      return;
-    }
+    if (!matches.length) return console.log("No matches found");
 
     const existingMatches = await Match.find({}, { eventId: 1 }).lean();
     const existingEventIds = new Set(existingMatches.map((m) => m.eventId));
     const newEventIds = new Set(matches.map((m) => m.eventId));
+
+    // Load all settings once
+    const settings = await Setting.find({}).lean();
+    const settingsBySportId = Object.fromEntries(
+      settings.map((s) => [s.sportId, s.scoreType])
+    );
 
     const tvUrlResults = await Promise.allSettled(
       matches.map((m) => getTvUrl(m.eventId, m.mType))
@@ -719,6 +815,9 @@ const matchSync = async () => {
 
     for (let i = 0; i < matches.length; i++) {
       const match = matches[i];
+
+      // get scoreType from setting model
+      const scoreTypeFromSetting = settingsBySportId[match.sportId] || "";
 
       const partialUpdate = {
         marketId: match.marketId,
@@ -733,8 +832,9 @@ const matchSync = async () => {
           filter: { eventId: match.eventId },
           update: {
             $set: partialUpdate,
+
+            // INSERT ONLY FIELDS
             $setOnInsert: {
-              // Only when NEW match
               mType: match.mType || "manual",
               eventName: match.eventName,
               competitionName: match.competitionName,
@@ -746,7 +846,7 @@ const matchSync = async () => {
               isResult: false,
               scoreId: match.scoreId || "0",
               scoreId2: 0,
-              scoreType: match.scoreType || "",
+              scoreType: scoreTypeFromSetting,
               matchRunners: match.matchRunners || [],
               matchType:
                 match.sportId == 4 && match.matchRunners?.length == 3
@@ -762,23 +862,20 @@ const matchSync = async () => {
       });
     }
 
-    // ---------- Bulk Write ----------
+    // Write to DB
     if (bulkOps.length > 0) {
       const r = await Match.bulkWrite(bulkOps);
-      console.log(
-        `✅ Upserted: ${r.upsertedCount}, Modified: ${r.modifiedCount}`
-      );
+      console.log(`Upserted: ${r.upsertedCount}, Modified: ${r.modifiedCount}`);
     }
 
-    // ---------- Delete old matches ----------
+    // Delete old matches
     const toDelete = [...existingEventIds].filter((id) => !newEventIds.has(id));
-
     if (toDelete.length > 0) {
       await Match.deleteMany({ eventId: { $in: toDelete } });
-      console.log(`🗑 Deleted: ${toDelete.length}`);
+      console.log(`Deleted: ${toDelete.length}`);
     }
 
-    console.log("✅ matchSync completed successfully");
+    console.log("matchSync completed");
   } catch (err) {
     console.error("❌ matchSync error:", err.message);
   }
